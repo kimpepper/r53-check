@@ -1,0 +1,7 @@
+domain: skpr.io
+repo: github.com/skpr/r53-check
+resources:
+- group: route53
+  kind: HealthCheck
+  version: v1
+version: "2"
