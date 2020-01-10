@@ -3,7 +3,7 @@ kind: HealthCheck
 metadata:
   name: healthcheck-sample
 spec:
-  name: sample healthcheck
+  name_prefix: pnx-prod
   domain: prod.pnx-d8.pnx.skpr.live
   port: 443
   type: HTTPS

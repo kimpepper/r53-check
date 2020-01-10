@@ -40,7 +40,7 @@ spec:
               type: boolean
             domain:
               type: string
-            name:
+            name_prefix:
               type: string
             port:
               format: int64

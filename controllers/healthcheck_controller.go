@@ -84,9 +84,10 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	name := healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
 	_, err = r53Client.ChangeTagsForResource(&route53.ChangeTagsForResourceInput{
 		AddTags: []*route53.Tag{
-			{Key: aws.String("Name"), Value: &healthCheck.Name},
+			{Key: aws.String("Name"), Value: &name},
 		},
 		ResourceId:   output.HealthCheck.Id,
 		ResourceType: aws.String(route53.TagResourceTypeHealthcheck),

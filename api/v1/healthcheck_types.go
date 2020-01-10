@@ -27,7 +27,7 @@ type HealthCheckSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Name         string `json:"name,omitempty"`
+	NamePrefix   string `json:"name_prefix,omitempty"`
 	Domain       string `json:"domain,omitempty"`
 	Type         string `json:"type,omitempty"`
 	Port         int64  `json:"port,omitempty"`
