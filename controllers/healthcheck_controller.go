@@ -82,12 +82,80 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	finalizerName := "healthcheck.route53.finalizers.skpr.io"
+	if healthCheck.ObjectMeta.DeletionTimestamp.IsZero() {
+		// The health check is not being deleted. Register the finalizer.
+		if !containsString(healthCheck.ObjectMeta.Finalizers, finalizerName) {
+			healthCheck.ObjectMeta.Finalizers = append(healthCheck.ObjectMeta.Finalizers, finalizerName)
+			if err := r.Update(context.Background(), &healthCheck); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		// The health check is being deleted. Handled external resources.
+		if containsString(healthCheck.ObjectMeta.Finalizers, finalizerName) {
+			// our finalizer is present, so lets handle any external dependency
+			if err := r.deleteExternalResources(&healthCheck); err != nil {
+				// if fail to delete the external dependency here, return with error
+				// so that it can be retried
+				return ctrl.Result{}, err
+			}
+
+			// remove our finalizer from the list and update it.
+			healthCheck.ObjectMeta.Finalizers = removeString(healthCheck.ObjectMeta.Finalizers, finalizerName)
+			if err := r.Update(context.Background(), &healthCheck); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		return ctrl.Result{}, err
+	}
+
 	result := ctrl.Result{
 		Requeue:      false,
 		RequeueAfter: time.Second * 30,
 	}
 
 	return result, nil
+}
+
+// deleteExternalResources deletes external resources on health check deletion.
+func (r *HealthCheckReconciler) deleteExternalResources(healthCheck *route53v1.HealthCheck) error {
+	err := r.deleteAlarms(healthCheck)
+	if err != nil {
+		return err
+	}
+	err = r.deleteHealthCheck(healthCheck)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// deleteAlarm deletes the alarms associated with the health check.
+func (r *HealthCheckReconciler) deleteAlarms(healthCheck *route53v1.HealthCheck) error {
+	if healthCheck.Status.AlarmName != "" {
+		r.Log.Info(fmt.Sprintf("Deleting alarm: %s", healthCheck.Status.AlarmName))
+		var alarmNames []*string
+		alarmNames = append(alarmNames, &healthCheck.Status.AlarmName)
+		_, err := r.CloudwatchClient.DeleteAlarms(&cloudwatch.DeleteAlarmsInput{
+			AlarmNames: alarmNames,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteAlarm deletes the alarms associated with the health check.
+func (r *HealthCheckReconciler) deleteHealthCheck(healthCheck *route53v1.HealthCheck) error {
+	r.Log.Info(fmt.Sprintf("Deleting health check: %s", healthCheck.Status.HealthCheckId))
+	_, err := r.Route53Client.DeleteHealthCheck(&route53.DeleteHealthCheckInput{
+		HealthCheckId: &healthCheck.Status.HealthCheckId,
+	})
+	return err
 }
 
 // updateStatus updates the health check status.
@@ -188,4 +256,24 @@ func getToken(uid types.UID) (string, error) {
 	}
 
 	return token, nil
+}
+
+// Helper functions to check and remove string from a slice of strings.
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(slice []string, s string) (result []string) {
+	for _, item := range slice {
+		if item == s {
+			continue
+		}
+		result = append(result, item)
+	}
+	return
 }
