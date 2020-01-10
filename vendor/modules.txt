@@ -1,6 +1,6 @@
 # cloud.google.com/go v0.38.0
 cloud.google.com/go/compute/metadata
-# github.com/aws/aws-sdk-go v1.27.3
+# github.com/aws/aws-sdk-go v1.27.4
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/awserr
 github.com/aws/aws-sdk-go/aws/awsutil
@@ -33,6 +33,7 @@ github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/rest
 github.com/aws/aws-sdk-go/private/protocol/restxml
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
+github.com/aws/aws-sdk-go/service/cloudwatch
 github.com/aws/aws-sdk-go/service/route53
 github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface

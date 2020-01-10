@@ -17,6 +17,10 @@ package main
 
 import (
 	"flag"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go/service/route53"
 	"os"
 
 	route53v1 "github.com/skpr/r53-check/api/v1"
@@ -64,10 +68,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	sess, err := session.NewSession(&aws.Config{Region: aws.String("us-east-1")})
+	if err != nil {
+		setupLog.Error(err, "unable to create aws session", "controller", "HealthCheck")
+	}
 	if err = (&controllers.HealthCheckReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("HealthCheck"),
-		Scheme: mgr.GetScheme(),
+		Client:           mgr.GetClient(),
+		Log:              ctrl.Log.WithName("controllers").WithName("HealthCheck"),
+		Scheme:           mgr.GetScheme(),
+		Route53Client:    route53.New(sess),
+		CloudwatchClient: cloudwatch.New(sess),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HealthCheck")
 		os.Exit(1)

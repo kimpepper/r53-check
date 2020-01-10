@@ -3,7 +3,7 @@ module github.com/skpr/r53-check
 go 1.13
 
 require (
-	github.com/aws/aws-sdk-go v1.27.3
+	github.com/aws/aws-sdk-go v1.27.4
 	github.com/go-logr/logr v0.1.0
 	github.com/go-test/deep v1.0.4
 	github.com/onsi/ginkgo v1.8.0

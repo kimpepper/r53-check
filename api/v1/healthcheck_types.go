@@ -27,12 +27,14 @@ type HealthCheckSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	NamePrefix   string `json:"name_prefix,omitempty"`
-	Domain       string `json:"domain,omitempty"`
-	Type         string `json:"type,omitempty"`
-	Port         int64  `json:"port,omitempty"`
-	ResourcePath string `json:"resource_path,omitempty"`
-	Disabled     bool   `json:"disabled,omitempty"`
+	NamePrefix    string   `json:"name_prefix,omitempty"`
+	Domain        string   `json:"domain,omitempty"`
+	Type          string   `json:"type,omitempty"`
+	Port          int64    `json:"port,omitempty"`
+	ResourcePath  string   `json:"resource_path,omitempty"`
+	Disabled      bool     `json:"disabled,omitempty"`
+	AlarmDisabled bool     `json:"alarm_disabled,omitempty"`
+	AlarmActions  []string `json:"alarm_actions,omitempty"`
 }
 
 // HealthCheckStatus defines the observed state of HealthCheck
@@ -40,10 +42,8 @@ type HealthCheckStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// PUT HEALTHCHECK ARN HERE
-	// STATUS?
-	// ALARMS (later)
-	Id string `json:"id,omitempty"`
+	HealthCheckId string `json:"id,omitempty"`
+	AlarmName     string `json:"alarm_name,omitempty"`
 }
 
 // +kubebuilder:object:root=true

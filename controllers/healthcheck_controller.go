@@ -19,7 +19,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/go-logr/logr"
 	"github.com/go-test/deep"
@@ -36,8 +36,10 @@ import (
 // HealthCheckReconciler reconciles a HealthCheck object
 type HealthCheckReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log              logr.Logger
+	Scheme           *runtime.Scheme
+	Route53Client    *route53.Route53
+	CloudwatchClient *cloudwatch.CloudWatch
 }
 
 // +kubebuilder:rbac:groups=route53.skpr.io,resources=healthchecks,verbs=get;list;watch;create;update;patch;delete
@@ -57,19 +59,58 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	sess, err := session.NewSession(&aws.Config{})
+	name := healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
+
+	healthCheckId, err := r.createHealthCheck(healthCheck, name)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r53Client := route53.New(sess)
+	var alarmName string
+	if !healthCheck.Spec.AlarmDisabled {
+		alarmName, err = r.createAlarm(name, healthCheck, &healthCheckId)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
+	err = r.updateStatus(healthCheck, route53v1.HealthCheckStatus{
+		HealthCheckId: healthCheckId,
+		AlarmName:     alarmName,
+	}, ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	result := ctrl.Result{
+		Requeue:      false,
+		RequeueAfter: time.Second * 30,
+	}
+
+	return result, nil
+}
+
+// updateStatus updates the health check status.
+func (r *HealthCheckReconciler) updateStatus(healthCheck route53v1.HealthCheck, status route53v1.HealthCheckStatus, ctx context.Context) error {
+	if diff := deep.Equal(healthCheck.Status, status); diff != nil {
+		r.Log.Info(fmt.Sprintf("Status change dectected: %s", diff))
+		healthCheck.Status = status
+		err := r.Status().Update(ctx, &healthCheck)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createHealthCheck creates a health check.
+func (r *HealthCheckReconciler) createHealthCheck(healthCheck route53v1.HealthCheck, name string) (string, error) {
 	callerReference, err := getToken(healthCheck.ObjectMeta.UID)
 	if err != nil {
-		return ctrl.Result{}, err
+		return "", err
 	}
 
-	output, err := r53Client.CreateHealthCheck(&route53.CreateHealthCheckInput{
+	output, err := r.Route53Client.CreateHealthCheck(&route53.CreateHealthCheckInput{
 		CallerReference: &callerReference,
 		HealthCheckConfig: &route53.HealthCheckConfig{
 			Type:                     &healthCheck.Spec.Type,
@@ -81,40 +122,54 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		},
 	})
 	if err != nil {
-		return ctrl.Result{}, err
+		return "", err
 	}
 
-	name := healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
-	_, err = r53Client.ChangeTagsForResource(&route53.ChangeTagsForResourceInput{
+	// Health Check 'Name' is a tag.
+	healthCheckId := *output.HealthCheck.Id
+	_, err = r.Route53Client.ChangeTagsForResource(&route53.ChangeTagsForResourceInput{
 		AddTags: []*route53.Tag{
 			{Key: aws.String("Name"), Value: &name},
 		},
-		ResourceId:   output.HealthCheck.Id,
+		ResourceId:   &healthCheckId,
 		ResourceType: aws.String(route53.TagResourceTypeHealthcheck),
 	})
 	if err != nil {
-		return ctrl.Result{}, err
+		return "", err
 	}
+	return healthCheckId, nil
+}
 
-	status := route53v1.HealthCheckStatus{
-		Id: *output.HealthCheck.Id,
+// createAlarm Creates an alarm for the health check.
+func (r *HealthCheckReconciler) createAlarm(name string, healthCheck route53v1.HealthCheck, healthCheckId *string) (string, error) {
+
+	alarmName := name + "-healthz"
+	var alarmActions []*string
+	for _, action := range healthCheck.Spec.AlarmActions {
+		alarmActions = append(alarmActions, &action)
 	}
-
-	if diff := deep.Equal(healthCheck.Status, status); diff != nil {
-		log.Info(fmt.Sprintf("Status change dectected: %s", diff))
-		healthCheck.Status = status
-		err := r.Status().Update(ctx, &healthCheck)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+	_, err := r.CloudwatchClient.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
+		AlarmName:          aws.String(alarmName),
+		AlarmDescription:   aws.String("Route53 HealthCheck alarm for " + name),
+		AlarmActions:       alarmActions,
+		Period:             aws.Int64(60),
+		EvaluationPeriods:  aws.Int64(1),
+		Threshold:          aws.Float64(1.0),
+		ComparisonOperator: aws.String("LessThanThreshold"),
+		Namespace:          aws.String("AWS/Route53"),
+		MetricName:         aws.String("HealthCheckStatus"),
+		Statistic:          aws.String("Minimum"),
+		Dimensions: []*cloudwatch.Dimension{
+			{
+				Name:  aws.String("HealthCheckId"),
+				Value: healthCheckId,
+			},
+		},
+	})
+	if err != nil {
+		return "", err
 	}
-
-	result := ctrl.Result{
-		Requeue:      false,
-		RequeueAfter: time.Second * 30,
-	}
-
-	return result, nil
+	return alarmName, nil
 }
 
 func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {

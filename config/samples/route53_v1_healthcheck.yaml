@@ -8,3 +8,5 @@ spec:
   port: 443
   type: HTTPS
   resource_path: /healthz?token=5n15oSNULeOfL1aIMPaLP7Y9
+  alarm_actions:
+    - arn:aws:sns:us-east-1:646598420362:HealthzAlerts

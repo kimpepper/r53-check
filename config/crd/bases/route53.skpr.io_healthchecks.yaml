@@ -36,6 +36,12 @@ spec:
         spec:
           description: HealthCheckSpec defines the desired state of HealthCheck
           properties:
+            alarm_actions:
+              items:
+                type: string
+              type: array
+            alarm_disabled:
+              type: boolean
             disabled:
               type: boolean
             domain:
@@ -53,8 +59,9 @@ spec:
         status:
           description: HealthCheckStatus defines the observed state of HealthCheck
           properties:
+            alarm_name:
+              type: string
             id:
-              description: PUT HEALTHCHECK ARN HERE STATUS? ALARMS (later)
               type: string
           type: object
       type: object
