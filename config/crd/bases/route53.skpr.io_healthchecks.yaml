@@ -15,6 +15,8 @@ spec:
     plural: healthchecks
     singular: healthcheck
   scope: Namespaced
+  subresources:
+    status: {}
   validation:
     openAPIV3Schema:
       description: HealthCheck is the Schema for the healthchecks API
@@ -34,13 +36,26 @@ spec:
         spec:
           description: HealthCheckSpec defines the desired state of HealthCheck
           properties:
-            foo:
+            disabled:
+              type: boolean
+            domain:
               description: Foo is an example field of HealthCheck. Edit HealthCheck_types.go
                 to remove/update
+              type: string
+            port:
+              format: int64
+              type: integer
+            resource_path:
+              type: string
+            type:
               type: string
           type: object
         status:
           description: HealthCheckStatus defines the observed state of HealthCheck
+          properties:
+            id:
+              description: PUT HEALTHCHECK ARN HERE STATUS? ALARMS (later)
+              type: string
           type: object
       type: object
   version: v1

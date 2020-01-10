@@ -18,16 +18,17 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"github.com/go-test/deep"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/go-logr/logr"
+	"github.com/go-test/deep"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
+	"time"
 
 	route53v1 "github.com/skpr/r53-check/api/v1"
 )
@@ -62,30 +63,27 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	}
 
 	r53Client := route53.New(sess)
-	
-	config := route53.HealthCheckConfig{
-		Type:                         &healthCheck.Spec.Type,
-		FullyQualifiedDomainName:     &healthCheck.Spec.Domain,
-		Port:                         &healthCheck.Spec.Port,
-		ResourcePath:                 &healthCheck.Spec.ResourcePath,
-		EnableSNI:                    aws.Bool(true),
-		Disabled:                     &healthCheck.Spec.Disabled,
-	}
 
 	callerReference, err := getToken(healthCheck.ObjectMeta.UID)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	input := route53.CreateHealthCheckInput{
-		CallerReference:   &callerReference,
-		HealthCheckConfig: &config,
-	}
-
-	output, err := r53Client.CreateHealthCheck(&input)
+	output, err := r53Client.CreateHealthCheck(&route53.CreateHealthCheckInput{
+		CallerReference: &callerReference,
+		HealthCheckConfig: &route53.HealthCheckConfig{
+			Type:                     &healthCheck.Spec.Type,
+			FullyQualifiedDomainName: &healthCheck.Spec.Domain,
+			Port:                     &healthCheck.Spec.Port,
+			ResourcePath:             &healthCheck.Spec.ResourcePath,
+			EnableSNI:                aws.Bool(true),
+			Disabled:                 &healthCheck.Spec.Disabled,
+		},
+	})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
 
 	status := route53v1.HealthCheckStatus{
 		Id: *output.HealthCheck.Id,
@@ -94,12 +92,15 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	if diff := deep.Equal(healthCheck.Status, status); diff != nil {
 		log.Info(fmt.Sprintf("Status change dectected: %s", diff))
 		healthCheck.Status = status
-		r.Status().Update(ctx, &healthCheck)
+		err := r.Status().Update(ctx, &healthCheck)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	result := ctrl.Result{
 		Requeue:      false,
-		RequeueAfter: 0,
+		RequeueAfter: time.Second * 30,
 	}
 
 	return result, nil

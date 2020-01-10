@@ -43,11 +43,11 @@ type HealthCheckStatus struct {
 	// PUT HEALTHCHECK ARN HERE
 	// STATUS?
 	// ALARMS (later)
-	Id string `id:"domain,omitempty"`
+	Id string `json:"id,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-
+// +kubebuilder:subresource:status
 // HealthCheck is the Schema for the healthchecks API
 type HealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`

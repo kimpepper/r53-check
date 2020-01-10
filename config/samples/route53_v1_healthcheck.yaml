@@ -3,5 +3,7 @@ kind: HealthCheck
 metadata:
   name: healthcheck-sample
 spec:
-  # Add fields here
-  foo: bar
+  domain: prod.pnx-d8.pnx.skpr.live
+  port: 443
+  type: HTTPS
+  resource_path: /healthz?token=5n15oSNULeOfL1aIMPaLP7Y9
