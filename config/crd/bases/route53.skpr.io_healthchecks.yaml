@@ -39,8 +39,8 @@ spec:
             disabled:
               type: boolean
             domain:
-              description: Foo is an example field of HealthCheck. Edit HealthCheck_types.go
-                to remove/update
+              type: string
+            name:
               type: string
             port:
               format: int64

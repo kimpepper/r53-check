@@ -27,7 +27,7 @@ type HealthCheckSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of HealthCheck. Edit HealthCheck_types.go to remove/update
+	Name         string `json:"name,omitempty"`
 	Domain       string `json:"domain,omitempty"`
 	Type         string `json:"type,omitempty"`
 	Port         int64  `json:"port,omitempty"`

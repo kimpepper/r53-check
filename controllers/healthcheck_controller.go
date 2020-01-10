@@ -84,6 +84,16 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	_, err = r53Client.ChangeTagsForResource(&route53.ChangeTagsForResourceInput{
+		AddTags: []*route53.Tag{
+			{Key: aws.String("Name"), Value: &healthCheck.Name},
+		},
+		ResourceId:   output.HealthCheck.Id,
+		ResourceType: aws.String(route53.TagResourceTypeHealthcheck),
+	})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	status := route53v1.HealthCheckStatus{
 		Id: *output.HealthCheck.Id,
