@@ -61,20 +61,20 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 	name := healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
 
-	healthCheckId, err := r.createHealthCheck(healthCheck, name)
+	healthCheckId, err := r.syncHealthCheck(healthCheck, name)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	var alarmName string
 	if !healthCheck.Spec.AlarmDisabled {
-		alarmName, err = r.createAlarm(name, healthCheck, &healthCheckId)
+		alarmName, err = r.syncAlarm(name, healthCheck, &healthCheckId)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	err = r.updateStatus(healthCheck, route53v1.HealthCheckStatus{
+	err = r.syncStatus(healthCheck, route53v1.HealthCheckStatus{
 		HealthCheckId: healthCheckId,
 		AlarmName:     alarmName,
 	}, ctx)
@@ -158,8 +158,8 @@ func (r *HealthCheckReconciler) deleteHealthCheck(healthCheck *route53v1.HealthC
 	return err
 }
 
-// updateStatus updates the health check status.
-func (r *HealthCheckReconciler) updateStatus(healthCheck route53v1.HealthCheck, status route53v1.HealthCheckStatus, ctx context.Context) error {
+// syncStatus syncs the health check status.
+func (r *HealthCheckReconciler) syncStatus(healthCheck route53v1.HealthCheck, status route53v1.HealthCheckStatus, ctx context.Context) error {
 	if diff := deep.Equal(healthCheck.Status, status); diff != nil {
 		r.Log.Info(fmt.Sprintf("Status change dectected: %s", diff))
 		healthCheck.Status = status
@@ -171,8 +171,8 @@ func (r *HealthCheckReconciler) updateStatus(healthCheck route53v1.HealthCheck, 
 	return nil
 }
 
-// createHealthCheck creates a health check.
-func (r *HealthCheckReconciler) createHealthCheck(healthCheck route53v1.HealthCheck, name string) (string, error) {
+// syncHealthCheck syncs a health check.
+func (r *HealthCheckReconciler) syncHealthCheck(healthCheck route53v1.HealthCheck, name string) (string, error) {
 	callerReference, err := getToken(healthCheck.ObjectMeta.UID)
 	if err != nil {
 		return "", err
@@ -208,10 +208,10 @@ func (r *HealthCheckReconciler) createHealthCheck(healthCheck route53v1.HealthCh
 	return healthCheckId, nil
 }
 
-// createAlarm Creates an alarm for the health check.
-func (r *HealthCheckReconciler) createAlarm(name string, healthCheck route53v1.HealthCheck, healthCheckId *string) (string, error) {
+// syncAlarm Syncs an alarm for the health check.
+func (r *HealthCheckReconciler) syncAlarm(name string, healthCheck route53v1.HealthCheck, healthCheckId *string) (string, error) {
 
-	alarmName := name + "-healthz"
+	alarmName := name + "-healthcheck"
 	var alarmActions []*string
 	for _, action := range healthCheck.Spec.AlarmActions {
 		alarmActions = append(alarmActions, &action)
