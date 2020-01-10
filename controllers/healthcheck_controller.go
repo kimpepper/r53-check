@@ -33,6 +33,8 @@ import (
 	route53v1 "github.com/skpr/r53-check/api/v1"
 )
 
+const finalizerName = "healthcheck.route53.finalizers.skpr.io"
+
 // HealthCheckReconciler reconciles a HealthCheck object
 type HealthCheckReconciler struct {
 	client.Client
@@ -59,16 +61,16 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	name := healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
+	name := getHealthCheckName(&healthCheck)
 
-	healthCheckId, err := r.syncHealthCheck(healthCheck, name)
+	healthCheckId, err := r.syncHealthCheck(name, &healthCheck)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	var alarmName string
 	if !healthCheck.Spec.AlarmDisabled {
-		alarmName, err = r.syncAlarm(name, healthCheck, &healthCheckId)
+		alarmName, err = r.syncAlarm(name, &healthCheck, &healthCheckId)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -82,7 +84,6 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
-	finalizerName := "healthcheck.route53.finalizers.skpr.io"
 	if healthCheck.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The health check is not being deleted. Register the finalizer.
 		if !containsString(healthCheck.ObjectMeta.Finalizers, finalizerName) {
@@ -117,6 +118,11 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	}
 
 	return result, nil
+}
+
+// getHealthCheckName gets the healthcheck name.
+func getHealthCheckName(healthCheck *route53v1.HealthCheck) string {
+	return healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
 }
 
 // deleteExternalResources deletes external resources on health check deletion.
@@ -172,7 +178,7 @@ func (r *HealthCheckReconciler) syncStatus(healthCheck route53v1.HealthCheck, st
 }
 
 // syncHealthCheck syncs a health check.
-func (r *HealthCheckReconciler) syncHealthCheck(healthCheck route53v1.HealthCheck, name string) (string, error) {
+func (r *HealthCheckReconciler) syncHealthCheck(name string, healthCheck *route53v1.HealthCheck) (string, error) {
 	callerReference, err := getToken(healthCheck.ObjectMeta.UID)
 	if err != nil {
 		return "", err
@@ -209,7 +215,7 @@ func (r *HealthCheckReconciler) syncHealthCheck(healthCheck route53v1.HealthChec
 }
 
 // syncAlarm Syncs an alarm for the health check.
-func (r *HealthCheckReconciler) syncAlarm(name string, healthCheck route53v1.HealthCheck, healthCheckId *string) (string, error) {
+func (r *HealthCheckReconciler) syncAlarm(name string, healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
 
 	alarmName := name + "-healthcheck"
 	var alarmActions []*string
