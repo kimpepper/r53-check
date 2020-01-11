@@ -18,6 +18,9 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/route53"
@@ -27,8 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
-	"time"
 
 	route53v1 "github.com/skpr/r53-check/api/v1"
 )
@@ -61,16 +62,14 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	name := getHealthCheckName(&healthCheck)
-
-	healthCheckId, err := r.syncHealthCheck(name, &healthCheck)
+	healthCheckId, err := r.syncHealthCheck(&healthCheck)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	var alarmName string
 	if !healthCheck.Spec.AlarmDisabled {
-		alarmName, err = r.syncAlarm(name, &healthCheck, &healthCheckId)
+		alarmName, err = r.syncAlarm(&healthCheck, &healthCheckId)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -118,11 +117,6 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	}
 
 	return result, nil
-}
-
-// getHealthCheckName gets the healthcheck name.
-func getHealthCheckName(healthCheck *route53v1.HealthCheck) string {
-	return healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
 }
 
 // deleteExternalResources deletes external resources on health check deletion.
@@ -178,7 +172,7 @@ func (r *HealthCheckReconciler) syncStatus(healthCheck route53v1.HealthCheck, st
 }
 
 // syncHealthCheck syncs a health check.
-func (r *HealthCheckReconciler) syncHealthCheck(name string, healthCheck *route53v1.HealthCheck) (string, error) {
+func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthCheck) (string, error) {
 	callerReference, err := getToken(healthCheck.ObjectMeta.UID)
 	if err != nil {
 		return "", err
@@ -203,7 +197,7 @@ func (r *HealthCheckReconciler) syncHealthCheck(name string, healthCheck *route5
 	healthCheckId := *output.HealthCheck.Id
 	_, err = r.Route53Client.ChangeTagsForResource(&route53.ChangeTagsForResourceInput{
 		AddTags: []*route53.Tag{
-			{Key: aws.String("Name"), Value: &name},
+			{Key: aws.String("Name"), Value: aws.String(getHealthCheckName(healthCheck))},
 		},
 		ResourceId:   &healthCheckId,
 		ResourceType: aws.String(route53.TagResourceTypeHealthcheck),
@@ -215,16 +209,15 @@ func (r *HealthCheckReconciler) syncHealthCheck(name string, healthCheck *route5
 }
 
 // syncAlarm Syncs an alarm for the health check.
-func (r *HealthCheckReconciler) syncAlarm(name string, healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
+func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
 
-	alarmName := name + "-healthcheck"
 	var alarmActions []*string
 	for _, action := range healthCheck.Spec.AlarmActions {
 		alarmActions = append(alarmActions, &action)
 	}
 	_, err := r.CloudwatchClient.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
-		AlarmName:          aws.String(alarmName),
-		AlarmDescription:   aws.String("Route53 HealthCheck alarm for " + name),
+		AlarmName:          aws.String(getAlarmName(healthCheck)),
+		AlarmDescription:   aws.String("Route53 HealthCheck alarm for " + getHealthCheckName(healthCheck)),
 		AlarmActions:       alarmActions,
 		Period:             aws.Int64(60),
 		EvaluationPeriods:  aws.Int64(1),
@@ -243,7 +236,7 @@ func (r *HealthCheckReconciler) syncAlarm(name string, healthCheck *route53v1.He
 	if err != nil {
 		return "", err
 	}
-	return alarmName, nil
+	return getAlarmName(healthCheck), nil
 }
 
 func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -262,6 +255,16 @@ func getToken(uid types.UID) (string, error) {
 	}
 
 	return token, nil
+}
+
+// getHealthCheckName gets the healthcheck name.
+func getHealthCheckName(healthCheck *route53v1.HealthCheck) string {
+	return healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
+}
+
+// getHealthCheckName gets the healthcheck name.
+func getAlarmName(healthCheck *route53v1.HealthCheck) string {
+	return getHealthCheckName(healthCheck) + "-healthcheck"
 }
 
 // Helper functions to check and remove string from a slice of strings.
