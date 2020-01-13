@@ -50,12 +50,10 @@ type HealthCheckReconciler struct {
 
 func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
-	log := r.Log.WithValues("healthcheck", req.NamespacedName)
 
 	var healthCheck route53v1.HealthCheck
 
 	if err := r.Get(ctx, req.NamespacedName, &healthCheck); err != nil {
-		log.Error(err, "unable to fetch HealthCheck")
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
@@ -67,18 +65,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
-	var alarmName string
-	if !healthCheck.Spec.AlarmDisabled {
-		alarmName, err = r.syncAlarm(&healthCheck, &healthCheckId)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	err = r.syncStatus(healthCheck, route53v1.HealthCheckStatus{
-		HealthCheckId: healthCheckId,
-		AlarmName:     alarmName,
-	}, ctx)
+	alarmName, err := r.syncAlarm(&healthCheck, &healthCheckId)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -111,6 +98,14 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	err = r.syncStatus(healthCheck, route53v1.HealthCheckStatus{
+		HealthCheckId: healthCheckId,
+		AlarmName:     alarmName,
+	}, ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	result := ctrl.Result{
 		Requeue:      false,
 		RequeueAfter: time.Second * 30,
@@ -121,7 +116,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 // deleteExternalResources deletes external resources on health check deletion.
 func (r *HealthCheckReconciler) deleteExternalResources(healthCheck *route53v1.HealthCheck) error {
-	err := r.deleteAlarms(healthCheck)
+	err := r.deleteAlarm(healthCheck)
 	if err != nil {
 		return err
 	}
@@ -130,22 +125,6 @@ func (r *HealthCheckReconciler) deleteExternalResources(healthCheck *route53v1.H
 		return err
 	}
 
-	return nil
-}
-
-// deleteAlarm deletes the alarms associated with the health check.
-func (r *HealthCheckReconciler) deleteAlarms(healthCheck *route53v1.HealthCheck) error {
-	if healthCheck.Status.AlarmName != "" {
-		r.Log.Info(fmt.Sprintf("Deleting alarm: %s", healthCheck.Status.AlarmName))
-		var alarmNames []*string
-		alarmNames = append(alarmNames, &healthCheck.Status.AlarmName)
-		_, err := r.CloudwatchClient.DeleteAlarms(&cloudwatch.DeleteAlarmsInput{
-			AlarmNames: alarmNames,
-		})
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -190,6 +169,10 @@ func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthChe
 		},
 	})
 	if err != nil {
+		//if aerr, ok := err.(awserr.Error); ok {
+		//	switch aerr.Code() {
+		//	case
+		//}
 		return "", err
 	}
 
@@ -208,17 +191,38 @@ func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthChe
 	return healthCheckId, nil
 }
 
-// syncAlarm Syncs an alarm for the health check.
+// syncAlarm syncs the health check alarm.
 func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
+	var (
+		alarmName string
+		err       error
+	)
+	if healthCheck.Spec.AlarmDisabled {
+		err = r.deleteAlarm(healthCheck)
+	} else {
+		alarmName, err = r.createAlarm(healthCheck, healthCheckId)
+	}
+	if err != nil {
+		return "", err
+	}
+	return alarmName, nil
+}
 
-	var alarmActions []*string
+// createAlarm creates an alarm for the health check.
+func (r *HealthCheckReconciler) createAlarm(healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
+
+	var alarmActions, okActions []*string
 	for _, action := range healthCheck.Spec.AlarmActions {
 		alarmActions = append(alarmActions, &action)
+	}
+	for _, action := range healthCheck.Spec.OKActions {
+		okActions = append(okActions, &action)
 	}
 	_, err := r.CloudwatchClient.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
 		AlarmName:          aws.String(getAlarmName(healthCheck)),
 		AlarmDescription:   aws.String("Route53 HealthCheck alarm for " + getHealthCheckName(healthCheck)),
 		AlarmActions:       alarmActions,
+		OKActions:          okActions,
 		Period:             aws.Int64(60),
 		EvaluationPeriods:  aws.Int64(1),
 		Threshold:          aws.Float64(1.0),
@@ -237,6 +241,22 @@ func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, he
 		return "", err
 	}
 	return getAlarmName(healthCheck), nil
+}
+
+// deleteAlarm deletes the alarms associated with the health check.
+func (r *HealthCheckReconciler) deleteAlarm(healthCheck *route53v1.HealthCheck) error {
+	if healthCheck.Status.AlarmName != "" {
+		r.Log.Info(fmt.Sprintf("Deleting alarm: %s", healthCheck.Status.AlarmName))
+		var alarmNames []*string
+		alarmNames = append(alarmNames, &healthCheck.Status.AlarmName)
+		_, err := r.CloudwatchClient.DeleteAlarms(&cloudwatch.DeleteAlarmsInput{
+			AlarmNames: alarmNames,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {

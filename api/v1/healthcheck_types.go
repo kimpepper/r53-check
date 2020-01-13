@@ -35,6 +35,7 @@ type HealthCheckSpec struct {
 	Disabled      bool     `json:"disabled,omitempty"`
 	AlarmDisabled bool     `json:"alarm_disabled,omitempty"`
 	AlarmActions  []string `json:"alarm_actions,omitempty"`
+	OKActions     []string `json:"ok_actions,omitempty"`
 }
 
 // HealthCheckStatus defines the observed state of HealthCheck

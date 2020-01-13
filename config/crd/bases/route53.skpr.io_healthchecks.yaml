@@ -48,6 +48,10 @@ spec:
               type: string
             name_prefix:
               type: string
+            ok_actions:
+              items:
+                type: string
+              type: array
             port:
               format: int64
               type: integer
