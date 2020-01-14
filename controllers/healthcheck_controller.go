@@ -128,6 +128,7 @@ func (r *HealthCheckReconciler) getAlarmState(healthCheck *route53v1.HealthCheck
 	alarmNames = append(alarmNames, &alarmName)
 	output, err := r.CloudwatchClient.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
 		AlarmNames: alarmNames,
+		MaxRecords: aws.Int64(1),
 	})
 	if err != nil {
 		return "", err
