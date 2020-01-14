@@ -99,7 +99,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	}
 
 	// Get alarm state.
-	alarmState, err := r.getAlarmState(healthCheck)
+	alarmState, err := r.getAlarmState(alarmName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -122,8 +122,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 }
 
 // getAlarmState gets the current alarm state.
-func (r *HealthCheckReconciler) getAlarmState(healthCheck *route53v1.HealthCheck) (string, error) {
-	alarmName := getAlarmName(healthCheck)
+func (r *HealthCheckReconciler) getAlarmState(alarmName string) (string, error) {
 	var alarmNames []*string
 	alarmNames = append(alarmNames, &alarmName)
 	output, err := r.CloudwatchClient.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
