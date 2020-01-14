@@ -23,7 +23,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/go-logr/logr"
 	"github.com/go-test/deep"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,7 +33,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	route53v1 "github.com/skpr/r53-check/api/v1"
+	healthcheckv1 "github.com/skpr/r53-check/api/v1"
 )
 
 const finalizerName = "healthcheck.route53.finalizers.skpr.io"
@@ -41,8 +43,8 @@ type HealthCheckReconciler struct {
 	client.Client
 	Log              logr.Logger
 	Scheme           *runtime.Scheme
-	Route53Client    *route53.Route53
-	CloudwatchClient *cloudwatch.CloudWatch
+	Route53Client    route53iface.Route53API
+	CloudwatchClient cloudwatchiface.CloudWatchAPI
 }
 
 // +kubebuilder:rbac:groups=route53.skpr.io,resources=healthchecks,verbs=get;list;watch;create;update;patch;delete
@@ -51,7 +53,7 @@ type HealthCheckReconciler struct {
 func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 
-	healthCheck := &route53v1.HealthCheck{}
+	healthCheck := &healthcheckv1.HealthCheck{}
 
 	if err := r.Get(ctx, req.NamespacedName, healthCheck); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
@@ -104,7 +106,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
-	err = r.syncStatus(healthCheck, route53v1.HealthCheckStatus{
+	err = r.syncStatus(healthCheck, healthcheckv1.HealthCheckStatus{
 		HealthCheckId: healthCheckId,
 		AlarmName:     alarmName,
 		AlarmState:    alarmState,
@@ -139,7 +141,7 @@ func (r *HealthCheckReconciler) getAlarmState(alarmName string) (string, error) 
 }
 
 // deleteExternalResources deletes external resources on health check deletion.
-func (r *HealthCheckReconciler) deleteExternalResources(healthCheck *route53v1.HealthCheck) error {
+func (r *HealthCheckReconciler) deleteExternalResources(healthCheck *healthcheckv1.HealthCheck) error {
 	err := r.deleteAlarm(healthCheck)
 	if err != nil {
 		return err
@@ -153,7 +155,7 @@ func (r *HealthCheckReconciler) deleteExternalResources(healthCheck *route53v1.H
 }
 
 // deleteAlarm deletes the alarms associated with the health check.
-func (r *HealthCheckReconciler) deleteHealthCheck(healthCheck *route53v1.HealthCheck) error {
+func (r *HealthCheckReconciler) deleteHealthCheck(healthCheck *healthcheckv1.HealthCheck) error {
 	r.Log.Info(fmt.Sprintf("Deleting health check: %s", healthCheck.Status.HealthCheckId))
 	_, err := r.Route53Client.DeleteHealthCheck(&route53.DeleteHealthCheckInput{
 		HealthCheckId: &healthCheck.Status.HealthCheckId,
@@ -162,7 +164,7 @@ func (r *HealthCheckReconciler) deleteHealthCheck(healthCheck *route53v1.HealthC
 }
 
 // syncStatus syncs the health check status.
-func (r *HealthCheckReconciler) syncStatus(healthCheck *route53v1.HealthCheck, status route53v1.HealthCheckStatus, ctx context.Context) error {
+func (r *HealthCheckReconciler) syncStatus(healthCheck *healthcheckv1.HealthCheck, status healthcheckv1.HealthCheckStatus, ctx context.Context) error {
 	if diff := deep.Equal(healthCheck.Status, status); diff != nil {
 		r.Log.Info(fmt.Sprintf("Status change dectected: %s", diff))
 		healthCheck.Status = status
@@ -175,7 +177,7 @@ func (r *HealthCheckReconciler) syncStatus(healthCheck *route53v1.HealthCheck, s
 }
 
 // syncHealthCheck syncs a health check.
-func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthCheck) (string, error) {
+func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *healthcheckv1.HealthCheck) (string, error) {
 	callerReference, err := getToken(healthCheck.ObjectMeta.UID)
 	if err != nil {
 		return "", err
@@ -212,7 +214,7 @@ func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthChe
 }
 
 // syncAlarm syncs the health check alarm.
-func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, healthCheckId string) (string, error) {
+func (r *HealthCheckReconciler) syncAlarm(healthCheck *healthcheckv1.HealthCheck, healthCheckId string) (string, error) {
 	var (
 		alarmName string
 		err       error
@@ -229,7 +231,7 @@ func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, he
 }
 
 // createAlarm creates an alarm for the health check.
-func (r *HealthCheckReconciler) createAlarm(healthCheck *route53v1.HealthCheck, healthCheckId string) (string, error) {
+func (r *HealthCheckReconciler) createAlarm(healthCheck *healthcheckv1.HealthCheck, healthCheckId string) (string, error) {
 
 	var alarmActions, okActions []*string
 	for _, action := range healthCheck.Spec.AlarmActions {
@@ -264,7 +266,7 @@ func (r *HealthCheckReconciler) createAlarm(healthCheck *route53v1.HealthCheck, 
 }
 
 // deleteAlarm deletes the alarms associated with the health check.
-func (r *HealthCheckReconciler) deleteAlarm(healthCheck *route53v1.HealthCheck) error {
+func (r *HealthCheckReconciler) deleteAlarm(healthCheck *healthcheckv1.HealthCheck) error {
 	if healthCheck.Status.AlarmName != "" {
 		r.Log.Info(fmt.Sprintf("Deleting alarm: %s", healthCheck.Status.AlarmName))
 		var alarmNames []*string
@@ -281,7 +283,7 @@ func (r *HealthCheckReconciler) deleteAlarm(healthCheck *route53v1.HealthCheck) 
 
 func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&route53v1.HealthCheck{}).
+		For(&healthcheckv1.HealthCheck{}).
 		Complete(r)
 }
 
@@ -298,12 +300,12 @@ func getToken(uid types.UID) (string, error) {
 }
 
 // getHealthCheckName gets the healthcheck name.
-func getHealthCheckName(healthCheck *route53v1.HealthCheck) string {
+func getHealthCheckName(healthCheck *healthcheckv1.HealthCheck) string {
 	return healthCheck.Spec.NamePrefix + "-" + healthCheck.Name
 }
 
 // getHealthCheckName gets the healthcheck name.
-func getAlarmName(healthCheck *route53v1.HealthCheck) string {
+func getAlarmName(healthCheck *healthcheckv1.HealthCheck) string {
 	return getHealthCheckName(healthCheck) + "-healthcheck"
 }
 
