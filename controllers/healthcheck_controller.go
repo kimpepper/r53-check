@@ -51,21 +51,21 @@ type HealthCheckReconciler struct {
 func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 
-	var healthCheck route53v1.HealthCheck
+	healthCheck := &route53v1.HealthCheck{}
 
-	if err := r.Get(ctx, req.NamespacedName, &healthCheck); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, healthCheck); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	healthCheckId, err := r.syncHealthCheck(&healthCheck)
+	healthCheckId, err := r.syncHealthCheck(healthCheck)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	alarmName, err := r.syncAlarm(&healthCheck, &healthCheckId)
+	alarmName, err := r.syncAlarm(healthCheck, healthCheckId)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -74,7 +74,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		// The health check is not being deleted. Register the finalizer.
 		if !containsString(healthCheck.ObjectMeta.Finalizers, finalizerName) {
 			healthCheck.ObjectMeta.Finalizers = append(healthCheck.ObjectMeta.Finalizers, finalizerName)
-			if err := r.Update(context.Background(), &healthCheck); err != nil {
+			if err := r.Update(context.Background(), healthCheck); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -82,7 +82,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		// The health check is being deleted. Handled external resources.
 		if containsString(healthCheck.ObjectMeta.Finalizers, finalizerName) {
 			// our finalizer is present, so lets handle any external dependency
-			if err := r.deleteExternalResources(&healthCheck); err != nil {
+			if err := r.deleteExternalResources(healthCheck); err != nil {
 				// if fail to delete the external dependency here, return with error
 				// so that it can be retried
 				return ctrl.Result{}, err
@@ -90,7 +90,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 			// remove our finalizer from the list and update it.
 			healthCheck.ObjectMeta.Finalizers = removeString(healthCheck.ObjectMeta.Finalizers, finalizerName)
-			if err := r.Update(context.Background(), &healthCheck); err != nil {
+			if err := r.Update(context.Background(), healthCheck); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -138,11 +138,11 @@ func (r *HealthCheckReconciler) deleteHealthCheck(healthCheck *route53v1.HealthC
 }
 
 // syncStatus syncs the health check status.
-func (r *HealthCheckReconciler) syncStatus(healthCheck route53v1.HealthCheck, status route53v1.HealthCheckStatus, ctx context.Context) error {
+func (r *HealthCheckReconciler) syncStatus(healthCheck *route53v1.HealthCheck, status route53v1.HealthCheckStatus, ctx context.Context) error {
 	if diff := deep.Equal(healthCheck.Status, status); diff != nil {
 		r.Log.Info(fmt.Sprintf("Status change dectected: %s", diff))
 		healthCheck.Status = status
-		err := r.Status().Update(ctx, &healthCheck)
+		err := r.Status().Update(ctx, healthCheck)
 		if err != nil {
 			return err
 		}
@@ -169,10 +169,6 @@ func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthChe
 		},
 	})
 	if err != nil {
-		//if aerr, ok := err.(awserr.Error); ok {
-		//	switch aerr.Code() {
-		//	case
-		//}
 		return "", err
 	}
 
@@ -192,7 +188,7 @@ func (r *HealthCheckReconciler) syncHealthCheck(healthCheck *route53v1.HealthChe
 }
 
 // syncAlarm syncs the health check alarm.
-func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
+func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, healthCheckId string) (string, error) {
 	var (
 		alarmName string
 		err       error
@@ -209,7 +205,7 @@ func (r *HealthCheckReconciler) syncAlarm(healthCheck *route53v1.HealthCheck, he
 }
 
 // createAlarm creates an alarm for the health check.
-func (r *HealthCheckReconciler) createAlarm(healthCheck *route53v1.HealthCheck, healthCheckId *string) (string, error) {
+func (r *HealthCheckReconciler) createAlarm(healthCheck *route53v1.HealthCheck, healthCheckId string) (string, error) {
 
 	var alarmActions, okActions []*string
 	for _, action := range healthCheck.Spec.AlarmActions {
@@ -233,7 +229,7 @@ func (r *HealthCheckReconciler) createAlarm(healthCheck *route53v1.HealthCheck, 
 		Dimensions: []*cloudwatch.Dimension{
 			{
 				Name:  aws.String("HealthCheckId"),
-				Value: healthCheckId,
+				Value: aws.String(healthCheckId),
 			},
 		},
 	})
