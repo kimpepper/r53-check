@@ -45,6 +45,7 @@ type HealthCheckStatus struct {
 
 	HealthCheckId string `json:"id,omitempty"`
 	AlarmName     string `json:"alarm_name,omitempty"`
+	AlarmState    string `json:"alarm_state,omitempty"`
 }
 
 // +kubebuilder:object:root=true

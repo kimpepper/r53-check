@@ -65,6 +65,8 @@ spec:
           properties:
             alarm_name:
               type: string
+            alarm_state:
+              type: string
             id:
               type: string
           type: object

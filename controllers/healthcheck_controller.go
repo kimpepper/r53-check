@@ -98,9 +98,16 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	// Get alarm state.
+	alarmState, err := r.getAlarmState(healthCheck)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	err = r.syncStatus(healthCheck, route53v1.HealthCheckStatus{
 		HealthCheckId: healthCheckId,
 		AlarmName:     alarmName,
+		AlarmState:    alarmState,
 	}, ctx)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -112,6 +119,23 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	}
 
 	return result, nil
+}
+
+// getAlarmState gets the current alarm state.
+func (r *HealthCheckReconciler) getAlarmState(healthCheck *route53v1.HealthCheck) (string, error) {
+	alarmName := getAlarmName(healthCheck)
+	var alarmNames []*string
+	alarmNames = append(alarmNames, &alarmName)
+	output, err := r.CloudwatchClient.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
+		AlarmNames: alarmNames,
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, alarm := range output.MetricAlarms {
+		return *alarm.StateValue, nil
+	}
+	return "", nil
 }
 
 // deleteExternalResources deletes external resources on health check deletion.
