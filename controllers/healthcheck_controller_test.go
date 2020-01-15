@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"testing"
 
 	healthcheckv1 "github.com/skpr/r53-check/api/v1"
@@ -16,25 +16,17 @@ import (
 )
 
 func TestReconcile(t *testing.T) {
-	s := runtime.NewScheme()
-	client := fake.NewFakeClientWithScheme(s)
-	logger := zap.New()
+	err := healthcheckv1.AddToScheme(scheme.Scheme)
+	assert.Nil(t, err)
 
+	logger := zap.New()
 	route53Client := mock.NewMockRoute53Client()
 	cloudwatchClient := mock.NewMockCloudwatchClient()
-
-	reconciler := HealthCheckReconciler{
-		Client:           client,
-		Log:              logger,
-		Scheme:           s,
-		Route53Client:    route53Client,
-		CloudwatchClient: cloudwatchClient,
-	}
 
 	var actions []string
 	actions = append(actions, "example.action.arn")
 
-	healthcheck := healthcheckv1.HealthCheck{
+	healthcheck := &healthcheckv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: corev1.NamespaceDefault,
@@ -51,12 +43,22 @@ func TestReconcile(t *testing.T) {
 		},
 	}
 
+	client := fake.NewFakeClientWithScheme(scheme.Scheme, healthcheck)
+
+	reconciler := HealthCheckReconciler{
+		Client:           client,
+		Log:              logger,
+		Scheme:           scheme.Scheme,
+		Route53Client:    route53Client,
+		CloudwatchClient: cloudwatchClient,
+	}
+
 	query := types.NamespacedName{
 		Name:      healthcheck.ObjectMeta.Name,
 		Namespace: healthcheck.ObjectMeta.Namespace,
 	}
 
-	_, err := reconciler.Reconcile(ctrl.Request{
+	_, err = reconciler.Reconcile(ctrl.Request{
 		NamespacedName: query,
 	})
 

@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 )
@@ -14,7 +15,11 @@ func NewMockRoute53Client() *Route53Client {
 }
 
 func (r *Route53Client) CreateHealthCheck(*route53.CreateHealthCheckInput) (*route53.CreateHealthCheckOutput, error) {
-	return &route53.CreateHealthCheckOutput{}, nil
+	return &route53.CreateHealthCheckOutput{
+		HealthCheck: &route53.HealthCheck{
+			Id: aws.String("abcdefg"),
+		},
+	}, nil
 }
 
 func (r *Route53Client) ChangeTagsForResource(*route53.ChangeTagsForResourceInput) (*route53.ChangeTagsForResourceOutput, error) {
