@@ -62,22 +62,12 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	healthCheckId, err := r.syncHealthCheck(healthCheck)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	alarmName, err := r.syncAlarm(healthCheck, healthCheckId)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	if healthCheck.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The health check is not being deleted. Register the finalizer.
 		if !containsString(healthCheck.ObjectMeta.Finalizers, finalizerName) {
 			healthCheck.ObjectMeta.Finalizers = append(healthCheck.ObjectMeta.Finalizers, finalizerName)
 			if err := r.Update(context.Background(), healthCheck); err != nil {
-				return ctrl.Result{}, err
+				return ctrl.Result{}, fmt.Errorf("failed to add finalizer %w", err)
 			}
 		}
 	} else {
@@ -87,16 +77,26 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 			if err := r.deleteExternalResources(healthCheck); err != nil {
 				// if fail to delete the external dependency here, return with error
 				// so that it can be retried
-				return ctrl.Result{}, err
+				return ctrl.Result{}, fmt.Errorf("failed to delete exeternal resources %w", err)
 			}
 
 			// remove our finalizer from the list and update it.
 			healthCheck.ObjectMeta.Finalizers = removeString(healthCheck.ObjectMeta.Finalizers, finalizerName)
 			if err := r.Update(context.Background(), healthCheck); err != nil {
-				return ctrl.Result{}, err
+				return ctrl.Result{}, fmt.Errorf("failed to removed finalizer %w", err)
 			}
 		}
 
+		return ctrl.Result{}, nil
+	}
+
+	healthCheckId, err := r.syncHealthCheck(healthCheck)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	alarmName, err := r.syncAlarm(healthCheck, healthCheckId)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -112,7 +112,7 @@ func (r *HealthCheckReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		AlarmState:    alarmState,
 	}, ctx)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to sync status %v %w", healthCheck, err)
 	}
 
 	result := ctrl.Result{
